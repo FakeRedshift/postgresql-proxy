@@ -1,4 +1,8 @@
 import logging
+from typing import Optional
+
+_logger = logging.getLogger("postgresql_proxy")
+
 
 class Connection:
     def __init__(self, sock, address, name, events, context):
@@ -8,9 +12,10 @@ class Connection:
         self.events = events
         self.context = context
         self.interceptor = None
-        self.redirect_conn = None
+        self.redirect_conn: Optional[Connection] = None
         self.out_bytes = b''
         self.in_bytes = b''
+        self.terminated = False
 
     def parse_length(self, length_bytes):
         return int.from_bytes(length_bytes, 'big')
@@ -49,12 +54,20 @@ class Connection:
     def process_inbound_packet(self, header, body):
         if header != b'N':
             packet_type = header[0:-4]
-            logging.info("intercepting packet of type '%s' from %s", packet_type, self.name)
+            _logger.info("intercepting packet of type '%s' from %s", packet_type, self.name)
             body = self.interceptor.intercept(packet_type, body)
             header = packet_type + self.encode_length(len(body) + 4)
+            if packet_type == b'X':
+                # this a termination packet, it will indicate that the proxied client wants to close the
+                # postgres connection properly
+                self.terminated = True
+
         message = header + body
-        logging.debug("Received message. Relaying. Speaker: %s, message:\n%s", self.name, message)
-        self.redirect_conn.out_bytes += message
+        _logger.debug("Received message. Relaying. Speaker: %s, message:\n%s", self.name, message)
+
+        if self.redirect_conn:
+            # redirect_conn might not be set (anymore) at this stage
+            self.redirect_conn.out_bytes += message
 
     def sent(self, num_bytes):
         self.out_bytes = self.out_bytes[num_bytes:]

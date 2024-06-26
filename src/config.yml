@@ -1,0 +1,31 @@
+plugins:
+  - redshift
+
+settings:
+  log-level: debug
+  intercept-log: logs/intercept.log
+  general-log: logs/general.log
+
+instances:
+  - listen:
+      name: proxy
+      host: 0.0.0.0
+      port: 5439
+    redirect:
+      name: postgresql
+      host: 127.0.0.1
+      port: 5439
+    intercept:
+      commands:
+        queries:
+          - plugin: redshift
+            function: query_interceptor
+        contexts_data:
+          - plugin: redshift
+            function: context_data_interceptor
+        connects:
+      responses:
+        parameter_status:
+          - plugin: redshift
+            function: response_interceptor
+        connects:
